@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 全出血背景 + 缩小到安全区内的图形，避免被圆形遮罩裁掉 -->
+  <rect width="512" height="512" fill="#fdf6e3" />
+  <rect x="156" y="156" width="200" height="200" fill="none" stroke="#c97c7c" stroke-width="16" />
+  <path d="M256 156v200M156 256h200" stroke="#e9c8c6" stroke-width="12" stroke-dasharray="24 18" />
+</svg>

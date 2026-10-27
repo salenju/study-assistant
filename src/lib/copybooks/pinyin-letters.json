@@ -1,0 +1,15 @@
+{
+  "id": "pinyin-letters",
+  "name": "拼音字母表",
+  "gridType": "pinyin",
+  "cols": 10,
+  "chars": [
+    "a", "o", "e", "i", "u", "ü",
+    "b", "p", "m", "f",
+    "d", "t", "n", "l",
+    "g", "k", "h",
+    "j", "q", "x",
+    "z", "c", "s",
+    "r", "y", "w"
+  ]
+}
