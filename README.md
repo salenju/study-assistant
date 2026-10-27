@@ -32,6 +32,43 @@ npm run preview     # 本地预览生产构建（PWA 只在构建产物里生效
 
 > PWA 需要 HTTPS 或 localhost 才能注册 Service Worker。上线前必须有 HTTPS 地址。
 
+## 部署到 GitHub Pages
+
+仓库已内置 `.github/workflows/deploy.yml`：推送到 `main` 即自动「装依赖 → 跑单测 → 构建 → 发布」。
+
+**首次启用只需手动做一步**（必须由仓库管理员在网页上操作）：
+
+> Settings → Pages → Build and deployment → Source 选 **GitHub Actions**
+
+设置好之前，第一次 workflow 会在 `configure-pages` 步骤失败，属正常现象；设置后重新运行即可（或再推一次）。
+
+完成后访问：`https://<用户名>.github.io/<仓库名>/`
+
+### 为什么构建要带 `VITE_BASE`
+
+GitHub Pages 的项目站点挂在 `/<仓库名>/` 子路径下。若按根路径构建：
+
+- `index.html` 里的 JS/CSS 会 404 → 页面白屏
+- manifest 的 `start_url`/`scope` 指到根路径 → 安装后打开空白
+- Service Worker 作用域跑到根目录 → 离线失效
+
+workflow 里用 `VITE_BASE=/${仓库名}/` 解决，仓库改名或 fork 都不需要改代码。
+
+本地验证子路径构建：
+
+```bash
+VITE_BASE=/study-assistant/ npm run build
+mkdir -p /tmp/pages/study-assistant && cp -R dist/. /tmp/pages/study-assistant/
+cd /tmp/pages && python3 -m http.server 5190
+# 打开 http://localhost:5190/study-assistant/
+```
+
+### 限制
+
+- GitHub Pages 强制 HTTPS，正好满足 PWA 的 Service Worker 前提
+- **免费账号的 Pages 只对 public 仓库开放**；私有仓库需 GitHub Pro / Team
+- Pages 只托管静态文件，本项目的「纯本地存储」设计天然适配，无需后端
+
 ## 常用命令
 
 ```bash
