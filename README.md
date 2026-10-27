@@ -63,6 +63,11 @@ cd /tmp/pages && python3 -m http.server 5190
 # 打开 http://localhost:5190/study-assistant/
 ```
 
+### 首次部署卡在 configure-pages？
+
+说明仓库还没启用 Pages，属于设置问题而非代码问题。按本文开头的「首次启用」一步设置即可。
+完整的部署排查与**真机验收清单**见 [`docs/DEPLOY-1027.md`](docs/DEPLOY-1027.md)。
+
 ### 限制
 
 - GitHub Pages 强制 HTTPS，正好满足 PWA 的 Service Worker 前提
