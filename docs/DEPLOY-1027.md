@@ -31,6 +31,17 @@ https://github.com/salenju/study-assistant/settings/pages
 
 设置完成后，到 Actions 页面重跑失败的那次，或再推一个提交。
 
+#### 为什么不用 `enablement: true` 自动开通
+
+GitHub 的报错里提到了这个参数，但 `configure-pages` 的官方输入说明写着：
+
+> This option requires a token other than `GITHUB_TOKEN` to be provided.
+> In the context of a Personal Access Token, the `repo` scope or Pages write permission is required.
+
+也就是说，必须额外准备一个 PAT 或 GitHub App 令牌存进 Secrets，流水线才有权开通 Pages。
+为一个一次性开关长期维护密钥不划算，所以工作流改成**先自检**：
+未启用时直接在日志里打印设置页地址并以非零码退出，而不是抛一个看不懂的 404。
+
 ### 1.3 上线后校验
 
 访问 `https://salenju.github.io/study-assistant/`，逐项确认：
@@ -48,6 +59,7 @@ https://github.com/salenju/study-assistant/settings/pages
 | 私有仓库 | 免费账号的 Pages 只对 public 仓库开放，私有仓库需要 GitHub Pro / Team |
 | 首次部署 | Source 未设为 GitHub Actions 前，流水线必然停在 configure-pages |
 | 自定义域名 | 若绑定自有域名，`VITE_BASE` 要改回 `/` 并同步 manifest |
+| 运行时版本 | 所有 action 已升到 node24 版本（`checkout@v7` / `setup-node@v7` / `configure-pages@v6` / `upload-pages-artifact@v5` / `deploy-pages@v5`），不再触发 Node 20 弃用告警 |
 
 ---
 

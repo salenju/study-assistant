@@ -40,7 +40,8 @@ npm run preview     # 本地预览生产构建（PWA 只在构建产物里生效
 
 > Settings → Pages → Build and deployment → Source 选 **GitHub Actions**
 
-设置好之前，第一次 workflow 会在 `configure-pages` 步骤失败，属正常现象；设置后重新运行即可（或再推一次）。
+设置好之前，workflow 会在开头的「检查 Pages 是否已启用」步骤停下，并在日志里给出设置页地址，属正常现象；
+设置后重新运行即可（或再推一次）。
 
 完成后访问：`https://<用户名>.github.io/<仓库名>/`
 

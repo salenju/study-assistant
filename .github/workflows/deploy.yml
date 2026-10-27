@@ -22,9 +22,27 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      # 先确认仓库已启用 Pages。
+      # 不检查的话，configure-pages 只会抛一个 404，日志里看不出该做什么。
+      # 注意：configure-pages 的 enablement:true 需要 PAT 或 GitHub App 令牌，
+      # 默认的 GITHUB_TOKEN 无法启用，所以这里只能提示、不能代劳。
+      - name: 检查 Pages 是否已启用
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pages")
+          if [ "$code" != "200" ]; then
+            echo "::error::仓库尚未启用 Pages（API 返回 $code）。请打开 https://github.com/${{ github.repository }}/settings/pages ，把 Build and deployment 的 Source 设为「GitHub Actions」，然后重跑本工作流。"
+            exit 1
+          fi
+          echo "Pages 已启用，继续构建。"
+
+      - uses: actions/setup-node@v7
         with:
           # Vite 8 需要 Node 20.19+ 或 22.12+
           node-version: 22
@@ -43,9 +61,9 @@ jobs:
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
@@ -57,4 +75,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
