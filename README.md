@@ -20,8 +20,8 @@
 
 已实现：三层画布、田字格 / 米字格 / 四线三格渲染、DPR 像素对齐、横竖屏自适应、Pointer Events 采集（含
 `getCoalescedEvents` 补点）、速度/压感笔锋、中点贝塞尔平滑、笔模式防误触、撤销 / 重做、整笔擦除、
-多页管理、IndexedDB 落盘与节流、单页 PNG 导出、整本 JSON 备份与导入、描红字帖（拼音/汉字，自动分页）、
-PWA 安装与离线、笔宽三档。
+多页管理、IndexedDB 落盘与节流、单页 PNG 导出、整本 JSON 备份与导入、描红字帖（拼音/汉字/自定义汉字，
+自动分页）、PWA 安装与离线、笔宽三档。
 
 ## 构建与预览
 
@@ -136,27 +136,15 @@ npm pack lxgw-wenkai-webfont@1.7.0 && tar -xzf lxgw-wenkai-webfont-*.tgz
 cd .. && python3 scripts/build-font.py      # 需要 pip3 install fonttools brotli
 ```
 
-字体为 LXGW WenKai（SIL OFL 1.1），许可证见 `public/fonts/OFL.txt`。
+脚本生成两份字体，避免为自定义内容牺牲首屏：
 
-## 描红字帖与字体
+| 文件 | 内容 | 体积 | 加载时机 |
+|---|---|---|---|
+| `wenkai-subset.woff2` | 内置字库用到的字符 | 约 12KB | 启动即加载 |
+| `wenkai-common.woff2` | GB2312 一级常用字 + 内置字 | 约 850KB | 自定义描红出现子集外字符时 |
 
-内置 4 个字库（`src/lib/copybooks/*.json`）：
-
-| 字库 | 格子 | 字数 |
-|---|---|---|
-| 拼音字母表 | 四线三格 | 26 |
-| 拼音声调 | 四线三格 | 24 |
-| 一年级 · 独体字 | 田字格 | 24 |
-| 一年级 · 常用字 | 田字格 | 36 |
-
-新增字库只需往该目录丢一个 JSON，构建时自动收录，无需改代码。但**必须重新子集化字体**，
-否则新字会回退到系统字体：
-
-```bash
-mkdir -p .font-src && cd .font-src
-npm pack lxgw-wenkai-webfont@1.7.0 && tar -xzf lxgw-wenkai-webfont-*.tgz
-cd .. && python3 scripts/build-font.py      # 需要 pip3 install fonttools brotli
-```
+「新建 → 汉字字帖 → 自定义描红内容」可输入任意汉字（最多 80 个，标点和空格自动忽略），
+按当前视口行数自动分页；超出常用字子集的生僻字会回退到系统字体。
 
 字体为 LXGW WenKai（SIL OFL 1.1），许可证见 `public/fonts/OFL.txt`。
 

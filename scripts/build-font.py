@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-把字库里出现的字符子集化成 public/fonts/wenkai-subset.woff2。
+生成两份描红楷体子集：
+
+- public/fonts/wenkai-subset.woff2：内置字库 JSON 里出现的字符，约 12KB，启动即加载
+- public/fonts/wenkai-common.woff2：GB2312 一级常用字（3755 个），约 2MB，
+  供「自定义描红内容」按需加载
 
 用法：
     pip3 install fonttools brotli
@@ -14,15 +18,17 @@
 
 为什么先合并再子集：
     webfont 包把字体按 unicode-range 拆成 97 个 woff2 分片，
-    我们的 110 个字符散落在其中 14 片里。直接引用 14 个分片要 653KB，
+    内置字库的 110 个字符散落在其中 14 片里。直接引用 14 个分片要 653KB，
     合并后只保留用到的字形，体积降到 12KB 左右。
 
 改字库 JSON 之后必须重跑本脚本，否则新字会渲染成回退字体。
+自定义描红依赖常用字子集，脚本没有跑过时自定义字会退到系统字体。
 """
 
 import json
 import pathlib
 import re
+import string
 import sys
 
 try:
@@ -34,8 +40,15 @@ except ImportError:
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOURCE_DIR = ROOT / '.font-src' / 'package'
-OUTPUT = ROOT / 'public' / 'fonts' / 'wenkai-subset.woff2'
 CSS = SOURCE_DIR / 'lxgwwenkai-regular.css'
+BASE_OUTPUT = ROOT / 'public' / 'fonts' / 'wenkai-subset.woff2'
+COMMON_OUTPUT = ROOT / 'public' / 'fonts' / 'wenkai-common.woff2'
+MERGED_TTF = ROOT / '.font-src' / '_merged.ttf'
+
+
+def unique(text: str) -> str:
+    """按出现顺序去重"""
+    return ''.join(dict.fromkeys(text))
 
 
 def collect_chars() -> str:
@@ -48,6 +61,28 @@ def collect_chars() -> str:
                 seen.add(char)
                 chars.append(char)
     return ''.join(chars)
+
+
+def gb2312_level1() -> str:
+    """GB2312 一级汉字（16–55 区，3755 字），足够覆盖小学习字范围"""
+    chars: list[str] = []
+    for high in range(0xB0, 0xD8):
+        for low in range(0xA1, 0xFF):
+            try:
+                chars.append(bytes((high, low)).decode('gb2312'))
+            except UnicodeDecodeError:
+                continue
+    return ''.join(chars)
+
+
+def base_text() -> str:
+    return unique(collect_chars())
+
+
+def common_text() -> str:
+    # 字母数字留给「楷体加载失败后仍能显示拼音」的兜底；〇 是年级常用字
+    extras = string.ascii_letters + string.digits + '〇'
+    return unique(collect_chars() + gb2312_level1() + extras)
 
 
 def parse_faces(css_text: str):
@@ -72,15 +107,8 @@ def parse_faces(css_text: str):
     return faces
 
 
-def main() -> None:
-    if not CSS.exists():
-        sys.exit(f'找不到字体源：{CSS}\n请先按脚本顶部说明下载 lxgw-wenkai-webfont 到 .font-src/')
-
-    text = collect_chars()
-    if not text:
-        sys.exit('字库为空，检查 src/lib/copybooks/*.json')
-
-    faces = parse_faces(CSS.read_text(encoding='utf-8'))
+def pick_faces(text: str, faces) -> list[str]:
+    """返回覆盖 text 所需的分片，并检查字体里是否缺字"""
     needed: dict[str, None] = {}
     missing: list[str] = []
 
@@ -99,10 +127,11 @@ def main() -> None:
     if missing:
         sys.exit(f'字体里没有这些字符：{"".join(missing)}')
 
-    paths = [str(SOURCE_DIR / 'files' / name) for name in sorted(needed)]
-    print(f'字符 {len(text)} 个，命中 {len(paths)} 个分片')
+    return sorted(needed)
 
-    merged = Merger().merge(paths)
+
+def build_subset(source: pathlib.Path, text: str, output: pathlib.Path) -> None:
+    font = TTFont(str(source))
 
     options = Options()
     options.layout_features = ['*']
@@ -113,20 +142,42 @@ def main() -> None:
 
     subsetter = Subsetter(options=options)
     subsetter.populate(text=text)
-    subsetter.subset(merged)
+    subsetter.subset(font)
 
-    merged.flavor = 'woff2'
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    merged.save(str(OUTPUT))
+    font.flavor = 'woff2'
+    output.parent.mkdir(parents=True, exist_ok=True)
+    font.save(str(output))
 
-    check = TTFont(str(OUTPUT))
+    check = TTFont(str(output))
     cmap = check.getBestCmap()
     absent = [char for char in text if ord(char) not in cmap]
 
-    print(f'输出 {OUTPUT.relative_to(ROOT)}：{OUTPUT.stat().st_size / 1024:.1f} KB')
-    print(f'字形覆盖：{len(cmap)} 个，缺失 {len(absent)} 个')
+    print(f'输出 {output.relative_to(ROOT)}：{output.stat().st_size / 1024:.1f} KB')
+    print(f'  字符 {len(text)} 个，字形覆盖 {len(cmap)} 个，缺失 {len(absent)} 个')
     if absent:
-        sys.exit(f'子集后仍缺字符：{"".join(absent)}')
+        sys.exit(f'  子集后仍缺字符：{"".join(absent)}')
+
+
+def main() -> None:
+    if not CSS.exists():
+        sys.exit(f'找不到字体源：{CSS}\n请先按脚本顶部说明下载 lxgw-wenkai-webfont 到 .font-src/')
+
+    base = base_text()
+    common = common_text()
+    if not base:
+        sys.exit('字库为空，检查 src/lib/copybooks/*.json')
+
+    faces = parse_faces(CSS.read_text(encoding='utf-8'))
+    paths = [str(SOURCE_DIR / 'files' / name) for name in pick_faces(unique(base + common), faces)]
+    print(f'内置字 {len(base)} 个，常用字子集 {len(common)} 个，命中 {len(paths)} 个分片')
+
+    # 两份子集来自同一次合并，避免重复加载 97 个分片
+    merged = Merger().merge(paths)
+    merged.save(str(MERGED_TTF))
+
+    build_subset(MERGED_TTF, base, BASE_OUTPUT)
+    build_subset(MERGED_TTF, common, COMMON_OUTPUT)
+    MERGED_TTF.unlink(missing_ok=True)
 
 
 if __name__ == '__main__':

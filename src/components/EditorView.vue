@@ -5,7 +5,7 @@ import { computeLayout, type GridLayout } from '@/core/layout/GridLayout'
 import { renderGrid } from '@/core/engine/GridRenderer'
 import { RenderEngine, type EngineState } from '@/core/engine/RenderEngine'
 import { renderCopybook } from '@/core/engine/CopybookRenderer'
-import { KAI_FONT_STACK, loadKaiFont } from '@/core/font/kaiFont'
+import { KAI_FONT_STACK, loadKaiCommonFont, loadKaiFont } from '@/core/font/kaiFont'
 import {
   canvasToBlob,
   composeCanvases,
@@ -27,6 +27,7 @@ import {
   type EditorAdapter,
 } from '@/store/notebook'
 import { editorCommands, editorState } from '@/store/editorState'
+import { needsCommonKaiFont } from '@/lib/copybooks'
 
 const stageRef = ref<HTMLDivElement | null>(null)
 const gridRef = ref<HTMLCanvasElement | null>(null)
@@ -49,6 +50,7 @@ let rafId = 0
 let loadingPage = false
 let lastStrokeCount = 0
 let lastThumbnailAt = 0
+let commonFontRequested = false
 
 function draw(): void {
   const stage = stageRef.value
@@ -99,6 +101,16 @@ function draw(): void {
       cols: currentPage.value?.fixedCols ?? copybook.rows[0]?.cells.length ?? 1,
       fontStack: KAI_FONT_STACK,
     })
+  }
+
+  // 自定义字超出内置子集时按需补载常用字楷体，加载完重绘一次
+  if (
+    copybook &&
+    !commonFontRequested &&
+    needsCommonKaiFont(copybook.rows.map((row) => row.char))
+  ) {
+    commonFontRequested = true
+    void loadKaiCommonFont().then(() => scheduleDraw())
   }
 }
 

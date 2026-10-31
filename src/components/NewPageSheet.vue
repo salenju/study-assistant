@@ -114,12 +114,16 @@ async function choose(option: Option): Promise<void> {
   z-index: 20;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: clamp(12px, 3vw, 24px);
   background: rgb(59 47 42 / 32%);
 }
 
+/* 矮屏（平板横屏的 CSS 视口往往只有 400px 高）必须限高并内部滚动 */
 .sheet {
-  width: min(640px, 100%);
+  width: min(560px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
   border-radius: 20px;
   background: var(--surface);
   box-shadow: 0 24px 64px rgb(59 47 42 / 24%);
@@ -127,38 +131,47 @@ async function choose(option: Option): Promise<void> {
 }
 
 .sheet__head {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
 }
 
 .sheet__title {
-  font-size: 17px;
+  font-size: 16px;
 }
 
 .text-btn {
-  min-height: 44px;
-  padding: 0 14px;
+  min-height: 40px;
+  padding: 0 12px;
   border-radius: 10px;
   font-size: 14px;
   color: var(--text-muted);
 }
 
+/* 5 个选项在平板宽度下排 3 列 → 两行收完，不再撑满竖屏 */
 .options {
+  flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  padding: 16px 20px 20px;
+  grid-template-columns: repeat(auto-fit, minmax(146px, 1fr));
+  gap: 10px;
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
+/* 左图标右文字：卡片矮一半，平板矮屏也不会撑满 */
 .option {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 12px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 10px 12px;
   border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--paper);
@@ -171,26 +184,48 @@ async function choose(option: Option): Promise<void> {
 }
 
 .option__preview {
-  display: block;
-  width: 100%;
-  aspect-ratio: 2.4;
+  /* 绝对定位 svg：否则 svg 的 1:1 固有比例会撑破图标框 */
+  position: relative;
+  grid-row: 1 / span 2;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
   color: var(--accent);
-  margin-bottom: 4px;
 }
 
 .option__preview svg {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   fill: none;
 }
 
 .option__label {
-  font-size: 15px;
+  font-size: 14px;
   color: var(--text);
 }
 
 .option__desc {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
+}
+
+/* 窄屏两列时压缩图标与字号，避免标题折行 */
+@media (max-width: 420px) {
+  .option {
+    grid-template-columns: 38px minmax(0, 1fr);
+    column-gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .option__preview {
+    width: 38px;
+    height: 38px;
+  }
+
+  .option__label {
+    font-size: 13px;
+  }
 }
 </style>

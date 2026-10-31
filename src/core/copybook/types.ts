@@ -22,6 +22,32 @@ export interface CopybookMeta {
   rows: CopyRow[]
 }
 
+/** 自定义字帖的固定标识；内置字库来自 lib/copybooks，不会占用这个 id */
+export const CUSTOM_COPYBOOK_ID = 'custom'
+export const CUSTOM_COPYBOOK_NAME = '自定义字帖'
+/** 自定义字帖一行几格，与内置汉字字帖保持一致 */
+export const CUSTOM_COPYBOOK_COLS = 10
+/** 单次最多练多少字：再多会生成十几页，孩子也练不完 */
+export const MAX_CUSTOM_CHARS = 80
+
+const HAN_CHAR = /\p{Script=Han}/u
+
+/**
+ * 从自由输入里提取可描红的汉字：去掉空格、标点、字母和数字，保留原顺序与重复。
+ * 超过上限直接截断，避免一次误粘贴生成几十页。
+ */
+export function sanitizeCustomChars(input: string): string[] {
+  const chars: string[] = []
+
+  for (const char of input) {
+    if (!HAN_CHAR.test(char)) continue
+    chars.push(char)
+    if (chars.length >= MAX_CUSTOM_CHARS) break
+  }
+
+  return chars
+}
+
 export interface CopybookSource {
   id: string
   name: string

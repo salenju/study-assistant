@@ -7,7 +7,14 @@
 
 import { computed, reactive } from 'vue'
 import { GRID_LABELS, type GridType } from '@/config/gridConfig'
-import { splitIntoPages } from '@/core/copybook/types'
+import {
+  CUSTOM_COPYBOOK_COLS,
+  CUSTOM_COPYBOOK_ID,
+  CUSTOM_COPYBOOK_NAME,
+  sanitizeCustomChars,
+  splitIntoPages,
+  type CopybookSource,
+} from '@/core/copybook/types'
 import type { PenWidth } from '@/core/stroke/WidthModel'
 import { computeLayout } from '@/core/layout/GridLayout'
 import type { PageMeta } from '@/core/page/types'
@@ -251,12 +258,10 @@ function nextSourceIndex(sourceName: string): number {
  * 按字库创建描红字帖页（PRD F8.3）。
  * 每页行数由当前书写区实际能放下的行数决定，字库条目超出时自动拆成连续多页。
  */
-export async function createCopybookPages(sourceId: string): Promise<void> {
+async function createCopybookEntries(source: CopybookSource): Promise<void> {
   if (!store || !saveQueue) return
-
-  const source = getCopybookSource(sourceId)
-  if (!source) {
-    showToast('字帖不存在')
+  if (source.chars.length === 0) {
+    showToast('字帖内容为空')
     return
   }
 
@@ -294,6 +299,36 @@ export async function createCopybookPages(sourceId: string): Promise<void> {
   notebook.pages.push(...entries.map((entry) => entry.meta))
   await loadPage(entries[0].meta.id)
   showToast(`已创建 ${entries.length} 页字帖`)
+}
+
+/** 按内置字库创建（PRD F8.3） */
+export async function createCopybookPages(sourceId: string): Promise<void> {
+  const source = getCopybookSource(sourceId)
+  if (!source) {
+    showToast('字帖不存在')
+    return
+  }
+  await createCopybookEntries(source)
+}
+
+/**
+ * 用户自定义汉字内容：同样的自动分页逻辑，只是字库变成输入框里的字。
+ * 页面元数据里带着完整 rows，导入导出与重开都不依赖任何字库注册表。
+ */
+export async function createCustomCopybookPages(chars: string[]): Promise<void> {
+  const clean = sanitizeCustomChars(chars.join(''))
+  if (clean.length === 0) {
+    showToast('请先输入要练的汉字')
+    return
+  }
+
+  await createCopybookEntries({
+    id: CUSTOM_COPYBOOK_ID,
+    name: CUSTOM_COPYBOOK_NAME,
+    gridType: 'tianzi',
+    cols: CUSTOM_COPYBOOK_COLS,
+    chars: clean,
+  })
 }
 
 /** 笔迹变化后调用：更新元数据并排队落盘 */

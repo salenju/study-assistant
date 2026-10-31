@@ -58,3 +58,17 @@ export function listCopybookSources(kind: 'pinyin' | 'hanzi'): CopybookSource[] 
     kind === 'pinyin' ? source.gridType === 'pinyin' : source.gridType !== 'pinyin',
   )
 }
+
+/** 内置字库出现过的字符，正好等于楷体子集字体的覆盖范围 */
+const BUILTIN_CHARS = new Set(COPYBOOK_SOURCES.flatMap((source) => source.chars))
+
+/**
+ * 判断这些字是否超出楷体子集。
+ * 超出时描红会退到系统字体（安卓上通常是无衬线黑体），需要补加载常用字子集。
+ */
+export function needsCommonKaiFont(chars: Iterable<string>): boolean {
+  for (const char of chars) {
+    if (!BUILTIN_CHARS.has(char)) return true
+  }
+  return false
+}
