@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   buildRowCells,
   MAX_CUSTOM_CHARS,
+  PINYIN_TRACE_COUNT,
   sanitizeCustomChars,
   splitIntoPages,
+  upgradePinyinRows,
 } from '@/core/copybook/types'
 
 describe('buildRowCells', () => {
@@ -11,15 +13,52 @@ describe('buildRowCells', () => {
     expect(buildRowCells(6)).toEqual(['demo', 'trace', 'trace', 'blank', 'blank', 'blank'])
   })
 
+  it('拼音 1 示范 + 6 描红 + 其余空白', () => {
+    expect(buildRowCells(10, PINYIN_TRACE_COUNT)).toEqual([
+      'demo',
+      'trace',
+      'trace',
+      'trace',
+      'trace',
+      'trace',
+      'trace',
+      'blank',
+      'blank',
+      'blank',
+    ])
+  })
+
   it('列数不足时按顺序截断，不补位', () => {
     expect(buildRowCells(1)).toEqual(['demo'])
     expect(buildRowCells(2)).toEqual(['demo', 'trace'])
     expect(buildRowCells(3)).toEqual(['demo', 'trace', 'trace'])
+    expect(buildRowCells(4, PINYIN_TRACE_COUNT)).toEqual(['demo', 'trace', 'trace', 'trace'])
   })
 
   it('列数非法时至少给一个格子', () => {
     expect(buildRowCells(0)).toEqual(['demo'])
     expect(buildRowCells(-5)).toEqual(['demo'])
+  })
+})
+
+describe('upgradePinyinRows', () => {
+  it('把旧的 2 次描红升级到 6 次，且不修改入参', () => {
+    const rows = [{ char: 'a', cells: buildRowCells(10) }]
+    const next = upgradePinyinRows(rows, 10)
+
+    expect(next?.[0].cells).toEqual(buildRowCells(10, PINYIN_TRACE_COUNT))
+    expect(next?.[0].char).toBe('a')
+    expect(rows[0].cells).toEqual(buildRowCells(10))
+  })
+
+  it('已符合当前规则时返回 null', () => {
+    const rows = [{ char: 'a', cells: buildRowCells(10, PINYIN_TRACE_COUNT) }]
+    expect(upgradePinyinRows(rows, 10)).toBeNull()
+  })
+
+  it('空行或非法列数不动数据', () => {
+    expect(upgradePinyinRows([], 10)).toBeNull()
+    expect(upgradePinyinRows([{ char: 'a', cells: ['demo'] }], 0)).toBeNull()
   })
 })
 
@@ -35,6 +74,22 @@ describe('splitIntoPages', () => {
   it('每行都带上完整角色分布', () => {
     const pages = splitIntoPages(['一'], 4, 5)
     expect(pages[0][0].cells).toEqual(['demo', 'trace', 'trace', 'blank', 'blank'])
+  })
+
+  it('拼音按 6 次描红切分', () => {
+    const pages = splitIntoPages(['a'], 4, 10, PINYIN_TRACE_COUNT)
+    expect(pages[0][0].cells).toEqual([
+      'demo',
+      'trace',
+      'trace',
+      'trace',
+      'trace',
+      'trace',
+      'trace',
+      'blank',
+      'blank',
+      'blank',
+    ])
   })
 
   it('行与行之间不共享 cells 数组引用', () => {

@@ -260,6 +260,12 @@ watch(
   () => scheduleDraw(),
 )
 
+// 翻页后必须重画格子层：描红底字属于页面数据，不重画会一直停在上页的字母
+watch(
+  () => currentPage.value?.id,
+  () => scheduleDraw(),
+)
+
 watch(
   () => editorState.tool,
   (tool) => engine?.setTool(tool),

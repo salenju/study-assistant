@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import {
   canGoNext,
   canGoPrev,
+  clearPageStrokes,
   currentIndex,
+  currentPage,
+  deletePage,
   goNext,
   goPrev,
   notebook,
@@ -14,6 +17,29 @@ const pagerLabel = computed(() => {
   if (!notebook.ready) return '—'
   return `第 ${currentIndex.value + 1} / ${notebook.pages.length} 页`
 })
+
+type PageAction = 'clear' | 'delete'
+
+/** 清除笔迹、删除整页都不可撤销，点击后必须再确认一次 */
+const pendingAction = ref<PageAction | null>(null)
+
+// 用编辑器的实时笔数判断：元数据里的 strokeCount 可能因未落盘而滞后
+const canClear = computed(() => editorState.strokeCount > 0)
+const canDelete = computed(() => notebook.ready && Boolean(currentPage.value))
+/** 只剩一页时删除会自动补一页空白，确认文案要说清楚 */
+const isLastPage = computed(() => notebook.pages.length <= 1)
+
+async function confirmAction(): Promise<void> {
+  const action = pendingAction.value
+  const page = currentPage.value
+  pendingAction.value = null
+  if (!action || !page) return
+  if (action === 'clear') {
+    await clearPageStrokes(page.id)
+    return
+  }
+  await deletePage(page.id)
+}
 
 function openPageList(): void {
   uiState.pageListOpen = true
@@ -88,6 +114,36 @@ function openNewPage(): void {
       </button>
 
       <button
+        class="tool"
+        type="button"
+        :disabled="!canClear"
+        title="清除本页笔迹"
+        aria-label="清除本页笔迹"
+        @click="pendingAction = 'clear'"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 3.5h8L19 8v12.5H6z" />
+          <path d="M14 3.5V8h5" />
+          <path d="m9.5 12 5 5M14.5 12l-5 5" />
+        </svg>
+      </button>
+
+      <button
+        class="tool"
+        type="button"
+        :disabled="!canDelete"
+        title="删除本页"
+        aria-label="删除本页"
+        @click="pendingAction = 'delete'"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4.5 7h15" />
+          <path d="M9.5 7V4.8h5V7" />
+          <path d="m6.8 7.8.8 12.2h8.8l.8-12.2" />
+        </svg>
+      </button>
+
+      <button
         class="tool tool--pen-mode"
         :class="{ 'is-active': editorState.penMode }"
         type="button"
@@ -156,6 +212,32 @@ function openNewPage(): void {
           <path d="M5 12h14" />
         </svg>
       </button>
+    </div>
+
+    <div v-if="pendingAction" class="confirm" @click.self="pendingAction = null">
+      <section
+        class="confirm__sheet"
+        role="alertdialog"
+        aria-modal="true"
+        :aria-label="pendingAction === 'delete' ? '删除本页' : '清除本页笔迹'"
+      >
+        <h2 class="confirm__title">
+          {{ pendingAction === 'delete' ? '删除本页？' : '清除本页笔迹？' }}
+        </h2>
+        <p v-if="pendingAction === 'delete'" class="confirm__text">
+          将删除「{{ currentPage?.title }}」整页，页面上的笔迹会一起删除，且无法恢复。
+          <template v-if="isLastPage">本子只剩这一页，删除后会自动新建一页空白页。</template>
+        </p>
+        <p v-else class="confirm__text">
+          将清空「{{ currentPage?.title }}」的全部笔迹，格子和页面会保留。清除后无法撤销。
+        </p>
+        <div class="confirm__actions">
+          <button type="button" class="confirm__btn" @click="pendingAction = null">取消</button>
+          <button type="button" class="confirm__btn confirm__btn--danger" @click="confirmAction">
+            {{ pendingAction === 'delete' ? '删除' : '清除' }}
+          </button>
+        </div>
+      </section>
     </div>
   </footer>
 </template>
@@ -245,5 +327,57 @@ function openNewPage(): void {
 
 .pager:active {
   background: var(--paper-shadow);
+}
+
+.confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(59 47 42 / 32%);
+}
+
+.confirm__sheet {
+  width: min(400px, 100%);
+  padding: 20px;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 24px 64px rgb(59 47 42 / 24%);
+}
+
+.confirm__title {
+  font-size: 17px;
+}
+
+.confirm__text {
+  margin: 10px 0 18px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm__btn {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.confirm__btn:active {
+  background: var(--paper-shadow);
+}
+
+.confirm__btn--danger {
+  color: #b4443f;
+  font-weight: 600;
 }
 </style>

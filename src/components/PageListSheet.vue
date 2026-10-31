@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import type { PageMeta } from '@/core/page/types'
 import {
+  clearPageStrokes,
   deletePage,
   exportBackupFile,
   exportCurrentPagePng,
@@ -14,30 +15,47 @@ import { uiState } from '@/store/editorState'
 import { formatShortTime } from '@/utils/format'
 import { BackupError } from '@/utils/backup'
 
-const pendingDelete = ref<PageMeta | null>(null)
+interface PendingAction {
+  kind: 'clear' | 'delete'
+  page: PageMeta
+}
+
+/** 清除与删除都是破坏性操作，统一走底部二次确认条 */
+const pending = ref<PendingAction | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const importing = ref(false)
 
 function close(): void {
   uiState.pageListOpen = false
-  pendingDelete.value = null
+  pending.value = null
 }
 
 async function pick(page: PageMeta): Promise<void> {
-  if (pendingDelete.value) return
+  if (pending.value) return
   await selectPage(page.id)
   close()
 }
 
-function askDelete(page: PageMeta): void {
-  pendingDelete.value = page
+function askClear(page: PageMeta): void {
+  // 确认条已经打开时不再响应新的操作，避免误点把「清除」换成「删除」
+  if (pending.value) return
+  pending.value = { kind: 'clear', page }
 }
 
-async function confirmDelete(): Promise<void> {
-  const target = pendingDelete.value
-  pendingDelete.value = null
-  if (!target) return
-  await deletePage(target.id)
+function askDelete(page: PageMeta): void {
+  if (pending.value) return
+  pending.value = { kind: 'delete', page }
+}
+
+async function confirmPending(): Promise<void> {
+  const action = pending.value
+  pending.value = null
+  if (!action) return
+  if (action.kind === 'clear') {
+    await clearPageStrokes(action.page.id)
+    return
+  }
+  await deletePage(action.page.id)
 }
 
 function triggerImport(): void {
@@ -101,24 +119,42 @@ async function onFileChange(event: Event): Promise<void> {
               <span class="page-card__title">{{ page.title }}</span>
               <span class="page-card__meta">{{ page.strokeCount }} 笔 · {{ formatShortTime(page.updatedAt) }}</span>
             </button>
-            <button
-              type="button"
-              class="page-card__del"
-              :aria-label="`删除 ${page.title}`"
-              @click="askDelete(page)"
-            >
-              ×
-            </button>
+            <div class="page-card__actions">
+              <button
+                type="button"
+                class="page-card__action"
+                :disabled="page.strokeCount === 0"
+                :title="page.strokeCount === 0 ? '该页还没有笔迹' : `清除 ${page.title} 的全部笔迹`"
+                @click="askClear(page)"
+              >
+                清除
+              </button>
+              <button
+                type="button"
+                class="page-card__action page-card__action--danger"
+                :aria-label="`删除 ${page.title}`"
+                @click="askDelete(page)"
+              >
+                删除
+              </button>
+            </div>
           </article>
         </div>
 
         <p v-if="notebook.pages.length === 0" class="empty">还没有页面</p>
       </div>
 
-      <footer v-if="pendingDelete" class="confirm">
-        <span class="confirm__text">删除「{{ pendingDelete.title }}」？删除后无法恢复。</span>
-        <button type="button" class="text-btn" @click="pendingDelete = null">取消</button>
-        <button type="button" class="text-btn text-btn--danger" @click="confirmDelete">删除</button>
+      <footer v-if="pending" class="confirm">
+        <span class="confirm__text">
+          <template v-if="pending.kind === 'clear'">
+            清除「{{ pending.page.title }}」的全部笔迹？格子和页面会保留，清除后无法撤销。
+          </template>
+          <template v-else>删除「{{ pending.page.title }}」？删除后无法恢复。</template>
+        </span>
+        <button type="button" class="text-btn" @click="pending = null">取消</button>
+        <button type="button" class="text-btn text-btn--danger" @click="confirmPending">
+          {{ pending.kind === 'clear' ? '清除' : '删除' }}
+        </button>
       </footer>
 
       <input
@@ -263,19 +299,32 @@ async function onFileChange(event: Event): Promise<void> {
   font-variant-numeric: tabular-nums;
 }
 
-.page-card__del {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  font-size: 20px;
-  line-height: 1;
+.page-card__actions {
+  display: flex;
+  border-top: 1px solid var(--border);
+}
+
+.page-card__action {
+  flex: 1;
+  min-height: 40px;
+  font-size: 13px;
   color: var(--text-muted);
-  background: rgb(255 253 247 / 88%);
+}
+
+.page-card__action + .page-card__action {
+  border-left: 1px solid var(--border);
+}
+
+.page-card__action:not(:disabled):active {
+  background: var(--paper-shadow);
+}
+
+.page-card__action:disabled {
+  opacity: 0.45;
+}
+
+.page-card__action--danger {
+  color: #b4443f;
 }
 
 .empty {

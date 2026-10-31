@@ -19,8 +19,16 @@ const options: { value: GridType; label: string }[] = [
 <template>
   <header class="topbar">
     <h1 class="topbar__title">
-      {{ currentPage?.title ?? '格子本' }}
-      <span v-if="notebook.hasUnsaved" class="dot" title="有未保存的内容" aria-label="未保存" />
+      <span class="topbar__title-text">
+        {{ currentPage?.title ?? '格子本' }}
+        <!-- 未保存提示不参与布局：书写时出现、落盘后消失，绝对定位避免挤动右侧控件 -->
+        <span
+          class="dot"
+          :class="{ 'is-on': notebook.hasUnsaved }"
+          :title="notebook.hasUnsaved ? '有未保存的内容' : undefined"
+          :aria-hidden="!notebook.hasUnsaved"
+        />
+      </span>
     </h1>
 
     <div class="segmented" role="tablist" aria-label="选择格子类型">
@@ -83,7 +91,6 @@ const options: { value: GridType; label: string }[] = [
 .topbar__title {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
   min-width: 96px;
   font-size: 16px;
   letter-spacing: 0.02em;
@@ -91,11 +98,25 @@ const options: { value: GridType; label: string }[] = [
   white-space: nowrap;
 }
 
+.topbar__title-text {
+  position: relative;
+}
+
+/* 始终占 0 布局空间，只靠透明度出现/消失，标题宽度因此保持恒定 */
 .dot {
+  position: absolute;
+  top: 50%;
+  right: -12px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--accent);
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 0.2s ease;
+}
+
+.dot.is-on {
   opacity: 0.75;
 }
 

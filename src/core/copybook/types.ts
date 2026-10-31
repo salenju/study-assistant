@@ -2,7 +2,8 @@
  * 描红字帖数据模型（PRD §5.3 / F8）。
  *
  * 字库是纯 JSON 配置，新增字库不需要改代码（见 lib/copybooks/index.ts）。
- * 每一行对应一个字，行内按角色排列：第 1 格示范、第 2–3 格描红、其余空白。
+ * 每一行对应一个字，行内按角色排列：第 1 格示范、随后若干格描红、其余空白。
+ * 描红格数按格子类型区分：拼音要更多次重复，汉字保持 2 次。
  */
 
 import type { GridType } from '@/config/gridConfig'
@@ -57,23 +58,56 @@ export interface CopybookSource {
   chars: string[]
 }
 
-/** 描红行的角色分布：1 示范 + 2 描红 + 其余空白 */
-export function buildRowCells(cols: number): CellRole[] {
+/** 汉字描红：1 示范 + 2 描红 + 其余空白 */
+export const HANZI_TRACE_COUNT = 2
+
+/** 拼音描红：1 示范 + 6 描红；一行 10 格时后面还剩 3 格可自由书写 */
+export const PINYIN_TRACE_COUNT = 6
+
+/** 描红行的角色分布：1 示范 + traceCount 个描红 + 其余空白 */
+export function buildRowCells(cols: number, traceCount = HANZI_TRACE_COUNT): CellRole[] {
   const safeCols = Math.max(1, Math.round(cols))
+  const traceEnd = Math.max(0, Math.round(traceCount))
   return Array.from({ length: safeCols }, (_, index) => {
     if (index === 0) return 'demo'
-    if (index <= 2) return 'trace'
+    if (index <= traceEnd) return 'trace'
     return 'blank'
   })
+}
+
+/**
+ * 把旧版拼音字帖行升级到当前的描红次数。
+ * 返回新版行数组；已符合规则时返回 null，调用方据此决定是否写回。
+ */
+export function upgradePinyinRows(rows: CopyRow[], cols: number): CopyRow[] | null {
+  if (!Number.isFinite(cols) || cols < 1 || rows.length === 0) return null
+
+  const expected = buildRowCells(cols, PINYIN_TRACE_COUNT)
+  let changed = false
+
+  const next = rows.map((row) => {
+    const same =
+      row.cells.length === expected.length && row.cells.every((role, index) => role === expected[index])
+    if (same) return row
+    changed = true
+    return { char: row.char, cells: [...expected] }
+  })
+
+  return changed ? next : null
 }
 
 /**
  * 把字库条目按每页行数切分成若干页（PRD F8.3）。
  * 顺序保持不变，保证同一个字库的练习顺序连续。
  */
-export function splitIntoPages(chars: string[], rowsPerPage: number, cols: number): CopyRow[][] {
+export function splitIntoPages(
+  chars: string[],
+  rowsPerPage: number,
+  cols: number,
+  traceCount = HANZI_TRACE_COUNT,
+): CopyRow[][] {
   const perPage = Math.max(1, Math.round(rowsPerPage))
-  const cells = buildRowCells(cols)
+  const cells = buildRowCells(cols, traceCount)
   const pages: CopyRow[][] = []
 
   for (let start = 0; start < chars.length; start += perPage) {

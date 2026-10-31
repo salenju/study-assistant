@@ -11,8 +11,11 @@ import {
   CUSTOM_COPYBOOK_COLS,
   CUSTOM_COPYBOOK_ID,
   CUSTOM_COPYBOOK_NAME,
+  HANZI_TRACE_COUNT,
+  PINYIN_TRACE_COUNT,
   sanitizeCustomChars,
   splitIntoPages,
+  upgradePinyinRows,
   type CopybookSource,
 } from '@/core/copybook/types'
 import type { PenWidth } from '@/core/stroke/WidthModel'
@@ -170,10 +173,32 @@ async function boot(): Promise<void> {
   notebook.ready = true
 }
 
+/**
+ * 读出某页笔迹；顺带把旧版拼音字帖（每行 2 次描红）升级到当前规则。
+ * 旧页面是在改规则之前生成的，不升级会一直显示 2 次，与新页面不一致。
+ */
+async function readPageStrokes(pageId: string): Promise<Stroke[]> {
+  if (!store) return []
+  const strokes = await store.getContent(pageId)
+
+  const page = notebook.pages.find((item) => item.id === pageId)
+  if (page?.gridType === 'pinyin' && page.kind === 'copybook' && page.copybook) {
+    const cols = page.fixedCols ?? page.copybook.rows[0]?.cells.length ?? 0
+    const rows = upgradePinyinRows(page.copybook.rows, cols)
+    if (rows) {
+      page.copybook = { ...page.copybook, rows }
+      page.updatedAt = Date.now()
+      await store.putPage(page, strokes)
+    }
+  }
+
+  return strokes
+}
+
 /** 把某一页的笔迹读进编辑器（不改变 currentId 的语义由调用方保证） */
 async function loadPage(pageId: string): Promise<void> {
   if (!store) return
-  const strokes = await store.getContent(pageId)
+  const strokes = await readPageStrokes(pageId)
   notebook.currentId = pageId
   adapter?.loadStrokes(strokes)
   await store.setSetting('currentPageId', pageId)
@@ -182,7 +207,7 @@ async function loadPage(pageId: string): Promise<void> {
 /** 初始化完成后由编辑器调用，把当前页笔迹载入画布 */
 export async function loadCurrentPage(): Promise<void> {
   if (!store || !notebook.currentId) return
-  const strokes = await store.getContent(notebook.currentId)
+  const strokes = await readPageStrokes(notebook.currentId)
   adapter?.loadStrokes(strokes)
 }
 
@@ -233,6 +258,36 @@ export async function deletePage(pageId: string): Promise<void> {
   showToast('已删除该页')
 }
 
+/**
+ * 清除某一页的全部笔迹，但保留页面本身（格子、标题、字帖底字都不动）。
+ * 二次确认由调用方负责——这里假定用户已经确认过。
+ */
+export async function clearPageStrokes(pageId: string): Promise<void> {
+  if (!store || !saveQueue) return
+
+  const page = notebook.pages.find((item) => item.id === pageId)
+  if (!page) return
+
+  // 先丢掉该页排队中的快照，否则一笔旧内容可能在清除后又被写回
+  saveQueue.drop(pageId)
+  await saveQueue.flush()
+
+  const meta: PageMeta = {
+    ...page,
+    strokeCount: 0,
+    updatedAt: Date.now(),
+    thumbnail: undefined,
+  }
+  await store.putPage(meta, [])
+  Object.assign(page, meta)
+
+  if (notebook.currentId === pageId) {
+    // 整页清空同时丢弃撤销栈：旧笔迹留在栈里既占内存也容易被误恢复
+    adapter?.loadStrokes([])
+  }
+  showToast('已清除本页笔迹')
+}
+
 export async function setGridType(gridType: GridType): Promise<void> {
   const page = currentPage.value
   if (!page || page.gridType === gridType) return
@@ -274,7 +329,9 @@ async function createCopybookEntries(source: CopybookSource): Promise<void> {
   })
   const rowsPerPage = Math.max(1, layout.rows)
 
-  const pageRows = splitIntoPages(source.chars, rowsPerPage, source.cols)
+  // 拼音要多描几遍才记得住，汉字描红 2 次足够
+  const traceCount = source.gridType === 'pinyin' ? PINYIN_TRACE_COUNT : HANZI_TRACE_COUNT
+  const pageRows = splitIntoPages(source.chars, rowsPerPage, source.cols, traceCount)
   await saveQueue.flush()
 
   const base = Date.now()
