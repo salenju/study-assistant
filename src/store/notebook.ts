@@ -6,20 +6,27 @@
  */
 
 import { computed, reactive } from 'vue'
-import { GRID_LABELS, type GridType } from '@/config/gridConfig'
+import { GRID_LABELS, GRID_METRICS, type GridType } from '@/config/gridConfig'
+import { DEFAULT_INK_COLOR, resolveInkColor } from '@/config/inkConfig'
 import {
+  COPYBOOK_FONT_SIZES,
   CUSTOM_COPYBOOK_COLS,
   CUSTOM_COPYBOOK_ID,
   CUSTOM_COPYBOOK_NAME,
+  CUSTOM_PINYIN_COPYBOOK_NAME,
+  expandRowsPerChar,
   HANZI_TRACE_COUNT,
   PINYIN_TRACE_COUNT,
+  resolveFontSizeLayout,
   sanitizeCustomChars,
+  sanitizePinyinChars,
   splitIntoPages,
   upgradePinyinRows,
+  type CopybookFontSize,
   type CopybookSource,
 } from '@/core/copybook/types'
 import type { PenWidth } from '@/core/stroke/WidthModel'
-import { computeLayout } from '@/core/layout/GridLayout'
+import { computeLayout, pinyinRowsForPitch } from '@/core/layout/GridLayout'
 import type { PageMeta } from '@/core/page/types'
 import type { Stroke } from '@/core/stroke/StrokeModel'
 import { SaveQueue } from '@/store/SaveQueue'
@@ -66,6 +73,10 @@ export const notebook = reactive<NotebookState>({
 /** 用户偏好（与页面无关的全局设置） */
 export const preferences = reactive({
   penWidth: 'medium' as PenWidth,
+  /** 新建字帖的字号：平板横屏时默认字号偏小，允许放大 */
+  copybookFontSize: 'standard' as CopybookFontSize,
+  /** 书写颜色：只影响新写的笔画，已有笔迹保留落笔时的颜色 */
+  inkColor: DEFAULT_INK_COLOR,
 })
 
 export const currentPage = computed<PageMeta | null>(
@@ -165,6 +176,13 @@ async function boot(): Promise<void> {
   if (savedWidth === 'thin' || savedWidth === 'medium' || savedWidth === 'thick') {
     preferences.penWidth = savedWidth
   }
+
+  const savedFontSize = await store.getSetting<CopybookFontSize>('copybookFontSize')
+  if (savedFontSize && COPYBOOK_FONT_SIZES.includes(savedFontSize)) {
+    preferences.copybookFontSize = savedFontSize
+  }
+
+  preferences.inkColor = resolveInkColor(await store.getSetting<string>('inkColor'))
 
   notebook.pages = pages
   const savedId = await store.getSetting<string>('currentPageId')
@@ -313,7 +331,10 @@ function nextSourceIndex(sourceName: string): number {
  * 按字库创建描红字帖页（PRD F8.3）。
  * 每页行数由当前书写区实际能放下的行数决定，字库条目超出时自动拆成连续多页。
  */
-async function createCopybookEntries(source: CopybookSource): Promise<void> {
+async function createCopybookEntries(
+  source: CopybookSource,
+  fontSize: CopybookFontSize = 'standard',
+): Promise<void> {
   if (!store || !saveQueue) return
   if (source.chars.length === 0) {
     showToast('字帖内容为空')
@@ -321,17 +342,24 @@ async function createCopybookEntries(source: CopybookSource): Promise<void> {
   }
 
   const viewport = adapter?.getViewport() ?? { width: 1180, height: 668 }
-  const layout = computeLayout({
-    width: viewport.width,
-    height: viewport.height,
-    type: source.gridType,
-    cols: source.cols,
-  })
-  const rowsPerPage = Math.max(1, layout.rows)
+  // 字号只能靠格子几何体现：四线三格加大行距，方格类减少列数
+  const grid = resolveFontSizeLayout(source.gridType, source.cols, fontSize, GRID_METRICS.pinyinTargetPitch)
+  const rowsPerPage =
+    source.gridType === 'pinyin'
+      ? pinyinRowsForPitch(viewport.height, grid.pitch)
+      : Math.max(
+          1,
+          computeLayout({
+            width: viewport.width,
+            height: viewport.height,
+            type: source.gridType,
+            cols: grid.cols,
+          }).rows,
+        )
 
   // 拼音要多描几遍才记得住，汉字描红 2 次足够
   const traceCount = source.gridType === 'pinyin' ? PINYIN_TRACE_COUNT : HANZI_TRACE_COUNT
-  const pageRows = splitIntoPages(source.chars, rowsPerPage, source.cols, traceCount)
+  const pageRows = splitIntoPages(source.chars, rowsPerPage, grid.cols, traceCount)
   await saveQueue.flush()
 
   const base = Date.now()
@@ -343,7 +371,7 @@ async function createCopybookEntries(source: CopybookSource): Promise<void> {
       updatedAt: base + offset,
       title: `${source.name} ${startIndex + offset}`,
       gridType: source.gridType,
-      fixedCols: source.cols,
+      fixedCols: grid.cols,
       fixedRows: rowsPerPage,
       kind: 'copybook',
       strokeCount: 0,
@@ -359,33 +387,53 @@ async function createCopybookEntries(source: CopybookSource): Promise<void> {
 }
 
 /** 按内置字库创建（PRD F8.3） */
-export async function createCopybookPages(sourceId: string): Promise<void> {
+export async function createCopybookPages(
+  sourceId: string,
+  fontSize: CopybookFontSize = preferences.copybookFontSize,
+): Promise<void> {
   const source = getCopybookSource(sourceId)
   if (!source) {
     showToast('字帖不存在')
     return
   }
-  await createCopybookEntries(source)
+  await createCopybookEntries(source, fontSize)
+}
+
+/** 自定义字帖的生成选项；三个参数都可省略，省略时按汉字字帖的标准字号生成 */
+export interface CustomCopybookOptions {
+  kind?: 'pinyin' | 'hanzi'
+  /** 同一个内容连排几行（多练几遍） */
+  rowsPerChar?: number
+  fontSize?: CopybookFontSize
 }
 
 /**
- * 用户自定义汉字内容：同样的自动分页逻辑，只是字库变成输入框里的字。
- * 页面元数据里带着完整 rows，导入导出与重开都不依赖任何字库注册表。
+ * 用户自定义内容：同样的自动分页逻辑，只是字库变成输入框里的内容。
+ * 拼音走四线三格、汉字走田字格；页面元数据里带着完整 rows，
+ * 导入导出与重开都不依赖任何字库注册表。
  */
-export async function createCustomCopybookPages(chars: string[]): Promise<void> {
-  const clean = sanitizeCustomChars(chars.join(''))
+export async function createCustomCopybookPages(
+  input: string,
+  options: CustomCopybookOptions = {},
+): Promise<void> {
+  const kind = options.kind ?? 'hanzi'
+  const isPinyin = kind === 'pinyin'
+  const clean = isPinyin ? sanitizePinyinChars(input) : sanitizeCustomChars(input)
   if (clean.length === 0) {
-    showToast('请先输入要练的汉字')
+    showToast(isPinyin ? '请先输入要练的字母' : '请先输入要练的汉字')
     return
   }
 
-  await createCopybookEntries({
-    id: CUSTOM_COPYBOOK_ID,
-    name: CUSTOM_COPYBOOK_NAME,
-    gridType: 'tianzi',
-    cols: CUSTOM_COPYBOOK_COLS,
-    chars: clean,
-  })
+  await createCopybookEntries(
+    {
+      id: CUSTOM_COPYBOOK_ID,
+      name: isPinyin ? CUSTOM_PINYIN_COPYBOOK_NAME : CUSTOM_COPYBOOK_NAME,
+      gridType: isPinyin ? 'pinyin' : 'tianzi',
+      cols: CUSTOM_COPYBOOK_COLS,
+      chars: expandRowsPerChar(clean, options.rowsPerChar ?? 1),
+    },
+    options.fontSize ?? preferences.copybookFontSize,
+  )
 }
 
 /** 笔迹变化后调用：更新元数据并排队落盘 */
@@ -409,6 +457,17 @@ export function markDirty(): void {
 export async function setPenWidth(value: PenWidth): Promise<void> {
   preferences.penWidth = value
   await store?.setSetting('penWidth', value)
+}
+
+export async function setCopybookFontSize(value: CopybookFontSize): Promise<void> {
+  preferences.copybookFontSize = value
+  await store?.setSetting('copybookFontSize', value)
+}
+
+/** 换书写颜色：只改引擎当前色，已有笔迹保留各自的颜色 */
+export async function setInkColor(value: string): Promise<void> {
+  preferences.inkColor = resolveInkColor(value)
+  await store?.setSetting('inkColor', preferences.inkColor)
 }
 
 export async function flushNow(): Promise<void> {

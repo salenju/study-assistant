@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  COPYBOOK_FONT_SIZES,
+  COPYBOOK_FONT_SIZE_SCALE,
   buildRowCells,
+  expandRowsPerChar,
   MAX_CUSTOM_CHARS,
+  MAX_ROWS_PER_CHAR,
+  PINYIN_MAX_TOKEN,
   PINYIN_TRACE_COUNT,
+  resolveFontSizeLayout,
   sanitizeCustomChars,
+  sanitizePinyinChars,
   splitIntoPages,
   upgradePinyinRows,
 } from '@/core/copybook/types'
@@ -129,5 +136,98 @@ describe('sanitizeCustomChars', () => {
 
   it('扩展区汉字同样识别', () => {
     expect(sanitizeCustomChars('𠮷')).toEqual(['𠮷'])
+  })
+})
+
+describe('sanitizePinyinChars', () => {
+  it('空格与标点作分隔，字母连写算一项', () => {
+    expect(sanitizePinyinChars(' b p，m f！zh  ch\tsh 123')).toEqual([
+      'b',
+      'p',
+      'm',
+      'f',
+      'zh',
+      'ch',
+      'sh',
+    ])
+  })
+
+  it('保留带调韵母与 ü', () => {
+    expect(sanitizePinyinChars('ā á ǎ à ü ǖ')).toEqual(['ā', 'á', 'ǎ', 'à', 'ü', 'ǖ'])
+  })
+
+  it('汉字、数字与大小写以外的符号都当分隔符', () => {
+    expect(sanitizePinyinChars('a春b1c。d')).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('保留输入顺序与重复项', () => {
+    expect(sanitizePinyinChars('ang ang ai')).toEqual(['ang', 'ang', 'ai'])
+  })
+
+  it('连写超过最长音节时截断', () => {
+    expect(PINYIN_MAX_TOKEN).toBe(6)
+    expect(sanitizePinyinChars('zhuangzhuang')).toEqual(['zhuang'])
+  })
+
+  it('超过上限时截断', () => {
+    const items = sanitizePinyinChars('a '.repeat(MAX_CUSTOM_CHARS + 20))
+    expect(items).toHaveLength(MAX_CUSTOM_CHARS)
+  })
+
+  it('没有拼音字母时返回空数组', () => {
+    expect(sanitizePinyinChars('春 风 123，。！')).toEqual([])
+  })
+
+  it('大写字母同样保留', () => {
+    expect(sanitizePinyinChars('A B C')).toEqual(['A', 'B', 'C'])
+  })
+})
+
+describe('resolveFontSizeLayout', () => {
+  it('标准字号不动布局参数', () => {
+    expect(resolveFontSizeLayout('pinyin', 10, 'standard', 100)).toEqual({ cols: 10, pitch: 100 })
+    expect(resolveFontSizeLayout('tianzi', 10, 'standard', 100)).toEqual({ cols: 10, pitch: 100 })
+  })
+
+  it('拼音放大只加行距，槽位数不变', () => {
+    expect(resolveFontSizeLayout('pinyin', 10, 'large', 100)).toEqual({ cols: 10, pitch: 125 })
+    expect(resolveFontSizeLayout('pinyin', 10, 'xlarge', 100)).toEqual({ cols: 10, pitch: 150 })
+  })
+
+  it('方格类放大只减少列数，行距不变', () => {
+    expect(resolveFontSizeLayout('tianzi', 10, 'large', 100)).toEqual({ cols: 8, pitch: 100 })
+    expect(resolveFontSizeLayout('mizige', 10, 'xlarge', 100)).toEqual({ cols: 7, pitch: 100 })
+  })
+
+  it('列数至少保留 1 列，非法档位按标准处理', () => {
+    expect(resolveFontSizeLayout('tianzi', 1, 'xlarge', 100).cols).toBe(1)
+    expect(resolveFontSizeLayout('tianzi', 10, 'huge' as never, 100)).toEqual({ cols: 10, pitch: 100 })
+  })
+
+  it('三档的放大倍数递增', () => {
+    expect(COPYBOOK_FONT_SIZES.map((size) => COPYBOOK_FONT_SIZE_SCALE[size])).toEqual([1, 1.25, 1.5])
+  })
+})
+
+describe('expandRowsPerChar', () => {
+  it('每项连续展开成指定行数，顺序不变', () => {
+    expect(expandRowsPerChar(['a', 'b'], 2)).toEqual(['a', 'a', 'b', 'b'])
+  })
+
+  it('1 行时与输入一致，且返回新数组', () => {
+    const input = ['a', 'b']
+    const rows = expandRowsPerChar(input, 1)
+    expect(rows).toEqual(['a', 'b'])
+    expect(rows).not.toBe(input)
+  })
+
+  it('非法行数按 1 行处理', () => {
+    expect(expandRowsPerChar(['a'], 0)).toEqual(['a'])
+    expect(expandRowsPerChar(['a'], -2)).toEqual(['a'])
+    expect(expandRowsPerChar(['a'], Number.NaN)).toEqual(['a'])
+  })
+
+  it('超过上限按上限截断', () => {
+    expect(expandRowsPerChar(['a'], MAX_ROWS_PER_CHAR + 5)).toHaveLength(MAX_ROWS_PER_CHAR)
   })
 })

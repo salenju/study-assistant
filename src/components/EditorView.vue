@@ -196,6 +196,7 @@ onMounted(async () => {
     engine = new RenderEngine({
       inkCanvas: inkRef.value,
       liveCanvas: liveRef.value,
+      color: preferences.inkColor,
       onStateChange: handleStateChange,
       onPerf: handlePerf,
     })
@@ -274,6 +275,12 @@ watch(
 watch(
   () => preferences.penWidth,
   (width) => engine?.setWidthParams(PEN_WIDTH_PRESETS[width]),
+)
+
+// 换色只影响新笔画：已落笔的笔画各自存了颜色，重放时用自己的
+watch(
+  () => preferences.inkColor,
+  (color) => engine?.setColor(color),
 )
 
 const debugRows = computed<[string, string][]>(() => {

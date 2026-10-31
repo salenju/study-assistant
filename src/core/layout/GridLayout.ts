@@ -76,6 +76,23 @@ export function computeLayout(input: LayoutInput): GridLayout {
 }
 
 /**
+ * 四线三格按目标行距反推每页行数（字帖分页用）。
+ *
+ * 不能直接读 `computeLayout().rows`：空白页路径会把单格高 u 夹在
+ * [pinyinMinUnit, pinyinMaxUnit] 之间，字号调大时行数被卡住，大字号和特大字号会算成同一档。
+ * 这里只关心「一页放几行」，不受 u 的上下限影响。
+ */
+export function pinyinRowsForPitch(
+  height: number,
+  pitch: number,
+  metrics: GridMetrics = GRID_METRICS,
+): number {
+  const availHeight = Math.max(1, height - metrics.margin * 2)
+  const rows = Math.round(availHeight / Math.max(1, pitch))
+  return clamp(rows, metrics.pinyinMinRows, metrics.pinyinMaxRows)
+}
+
+/**
  * 方格类格子（田字格 / 米字格）的布局。
  * 两者只是内线不同，几何完全一致，共用一套计算，避免出现两种格子格数不一致。
  */

@@ -63,12 +63,17 @@ export function listCopybookSources(kind: 'pinyin' | 'hanzi'): CopybookSource[] 
 const BUILTIN_CHARS = new Set(COPYBOOK_SOURCES.flatMap((source) => source.chars))
 
 /**
- * 判断这些字是否超出楷体子集。
+ * 判断这些描红项是否超出楷体子集。
  * 超出时描红会退到系统字体（安卓上通常是无衬线黑体），需要补加载常用字子集。
+ *
+ * 逐字符比对而不是整串比对：自定义拼音的一行可能是 `zh`、`zhuang` 这种多字母音节，
+ * 整串不在内置字库里会白白拉 850KB 常用字字体，而它其实一个字都用不上。
  */
-export function needsCommonKaiFont(chars: Iterable<string>): boolean {
-  for (const char of chars) {
-    if (!BUILTIN_CHARS.has(char)) return true
+export function needsCommonKaiFont(items: Iterable<string>): boolean {
+  for (const item of items) {
+    for (const char of item) {
+      if (!BUILTIN_CHARS.has(char)) return true
+    }
   }
   return false
 }

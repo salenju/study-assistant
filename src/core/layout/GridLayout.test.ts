@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { cellRectAt, computeLayout, stripLineYs, totalCells } from '@/core/layout/GridLayout'
+import {
+  cellRectAt,
+  computeLayout,
+  pinyinRowsForPitch,
+  stripLineYs,
+  totalCells,
+} from '@/core/layout/GridLayout'
 import { GRID_METRICS } from '@/config/gridConfig'
 
 const EPS = 1e-6
@@ -244,5 +250,29 @@ describe('computeLayout / 四线三格', () => {
   it('行数统计返回行数而非格数', () => {
     const layout = computeLayout({ width: 1180, height: 800, type: 'pinyin' })
     expect(totalCells(layout)).toBe(layout.rows)
+  })
+})
+
+describe('pinyinRowsForPitch', () => {
+  it('行距越大，每页行数越少（三档字号互不相撞）', () => {
+    const standard = pinyinRowsForPitch(668, GRID_METRICS.pinyinTargetPitch)
+    const large = pinyinRowsForPitch(668, GRID_METRICS.pinyinTargetPitch * 1.25)
+    const xlarge = pinyinRowsForPitch(668, GRID_METRICS.pinyinTargetPitch * 1.5)
+
+    expect(standard).toBeGreaterThan(large)
+    expect(large).toBeGreaterThan(xlarge)
+    expect(xlarge).toBe(GRID_METRICS.pinyinMinRows)
+  })
+
+  it('标准行距与空白页默认行数一致', () => {
+    const viewport = { width: 1180, height: 668 }
+    const layout = computeLayout({ ...viewport, type: 'pinyin' })
+    expect(pinyinRowsForPitch(viewport.height, GRID_METRICS.pinyinTargetPitch)).toBe(layout.rows)
+  })
+
+  it('行数钳制在配置的上下限内', () => {
+    expect(pinyinRowsForPitch(2000, 10)).toBe(GRID_METRICS.pinyinMaxRows)
+    expect(pinyinRowsForPitch(300, 200)).toBe(GRID_METRICS.pinyinMinRows)
+    expect(pinyinRowsForPitch(668, 0)).toBe(GRID_METRICS.pinyinMaxRows)
   })
 })

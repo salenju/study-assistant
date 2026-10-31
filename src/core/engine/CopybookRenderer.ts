@@ -107,16 +107,27 @@ function drawPinyin(
 ): void {
   const unit = layout.cellSize
   const slotWidth = layout.contentWidth / cols
+  const baseSize = Math.round(unit * COPYBOOK_STYLE.pinyinFontScale)
+  const maxTextWidth = slotWidth * COPYBOOK_STYLE.pinyinTextMaxRatio
 
   ctx.save()
   ctx.textAlign = 'center'
   // 基线对齐第 3 线：字母「坐」在基线上，升降部自然落到上下格
   ctx.textBaseline = 'alphabetic'
-  ctx.font = `${Math.round(unit * COPYBOOK_STYLE.pinyinFontScale)}px ${fontStack}`
+  ctx.font = `${baseSize}px ${fontStack}`
 
   for (let row = 0; row < rowCount; row += 1) {
     const data = copybook.rows[row]
     const baseline = stripLineYs(layout, row)[2]
+
+    // 单字母按原字号画；自定义的多字母音节（zh、zhuang）超出槽宽时等比缩小，
+    // 只缩这一行，避免一个槽位的字压到相邻格
+    ctx.font = `${baseSize}px ${fontStack}`
+    const textWidth = ctx.measureText(data.char).width
+    if (textWidth > maxTextWidth) {
+      const fitSize = Math.max(1, Math.floor((baseSize * maxTextWidth) / textWidth))
+      ctx.font = `${fitSize}px ${fontStack}`
+    }
 
     for (let col = 0; col < cols; col += 1) {
       const role = data.cells[col] ?? 'blank'

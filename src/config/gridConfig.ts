@@ -91,6 +91,12 @@ export const COPYBOOK_STYLE = {
    * 换字体后必须重新量 sxHeight。
    */
   pinyinFontScale: 2.14,
+  /**
+   * 拼音底字占槽位宽度的上限。
+   * 单字母远窄于此值，字号不受影响；自定义的多字母音节（zhuang）超过时等比缩小，
+   * 避免一个槽位的字压到相邻格。
+   */
+  pinyinTextMaxRatio: 0.92,
   /** 示范字透明度 */
   demoOpacity: 0.55,
   /** 描红字透明度 */
